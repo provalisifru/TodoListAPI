@@ -63,14 +63,17 @@ namespace TodoListAPI.Controllers
         {
             // Create claims for the token (e.g., username, role, etc.)
             var claims = new List<Claim> {
-
-        new Claim(ClaimTypes.Name, user.Username ),
+        new Claim(ClaimTypes.Name, user.Username),
         new Claim("UserId", user.UserId.ToString())
         };
-        // Add additional claims as needed
 
-            // Generate symmetric security key using a secret key (make sure to keep it secure)
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("eyJhbGciOiJIUzI1NiJ9.eyJSb2xlIjoiQWRtaW4iLCJVc2VybmFtZSI6IkphdmFJblVzZSIsImV4cCI6MTY4NTAwODc3OCwiaWF0IjoxNjg1MDA4Nzc4fQ.Udna7ZGIJiwiiqoC-k2W6nl3IGnv5WnfGIQsZlejcto"));
+            // Generate a random secret key
+            byte[] keyBytes = new byte[32];
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(keyBytes);
+            }
+            var key = new SymmetricSecurityKey(keyBytes);
 
             // Create signing credentials using the key
             var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);

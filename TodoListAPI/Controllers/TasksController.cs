@@ -78,12 +78,20 @@ namespace TodoListAPI.Controllers
             return tasks;
         }
 
-        // PUT: api/Tasks/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPut("{id}")]
+        // PUT: api/Tasks/userTasks
+        [HttpPut("userTasks")]
         public async Task<IActionResult> PutTask(Guid id, TodoList.Models.Task task)
         {
-            if (id != task.TaskId)
+            string? token = Request.Headers["Authorization"].FirstOrDefault()?.Replace("Bearer ", "");
+
+            if (string.IsNullOrEmpty(token))
+            {
+                return Unauthorized();
+            }
+
+            Guid userId = GetUserIdFromToken(token!);
+
+            if (id != task.TaskId || userId != task.UserId)
             {
                 return BadRequest();
             }

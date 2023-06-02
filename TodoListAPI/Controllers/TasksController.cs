@@ -79,8 +79,8 @@ namespace TodoListAPI.Controllers
         }
 
         // PUT: api/Tasks/userTasks
-        [HttpPut("userTasks")]
-        public async Task<IActionResult> PutTask(Guid id, TodoList.Models.Task task)
+        [HttpPatch("userTasks")]
+        public async Task<IActionResult> PatchTasks([FromBody] List<TaskUpdateData> tasksToUpdate)
         {
             string? token = Request.Headers["Authorization"].FirstOrDefault()?.Replace("Bearer ", "");
 
@@ -91,12 +91,17 @@ namespace TodoListAPI.Controllers
 
             Guid userId = GetUserIdFromToken(token!);
 
-            if (id != task.TaskId || userId != task.UserId)
+            foreach (var taskUpdateData in tasksToUpdate)
             {
-                return BadRequest();
-            }
+                var existingTask = await _context.Tasks.FindAsync(taskUpdateData.TaskId);
 
-            _context.Entry(task).State = EntityState.Modified;
+                if (existingTask == null || existingTask.UserId != userId)
+                {
+                    return NotFound();
+                }
+
+                existingTask.IsCompleted = taskUpdateData.IsCompleted;
+            }
 
             try
             {
@@ -104,23 +109,23 @@ namespace TodoListAPI.Controllers
             }
             catch (DbUpdateConcurrencyException)
             {
-                if (!TaskExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
+                return StatusCode(500, "Failed to update the tasks.");
             }
 
             return NoContent();
         }
 
+        public class TaskUpdateData
+        {
+            public Guid TaskId { get; set; }
+            public sbyte IsCompleted { get; set; }
+        }
+
+
         // POST: api/Tasks
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPost]
-        public async Task<ActionResult<TodoList.Models.Task>> PostTask(TodoList.Models.Task task)
+        [HttpPost("userTasks")]
+        public async Task<ActionResult<TodoList.Models.Task>> PostTask([FromBody] TodoList.Models.Task task)
         {
             // Retrieve the token from the request headers
             string token = Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
@@ -128,49 +133,101 @@ namespace TodoListAPI.Controllers
             // Validate and extract the user ID from the token
             Guid userId = GetUserIdFromToken(token);
 
-            if (_context.Tasks == null)
-            {
-                return Problem("Entity set 'TodoListContext.Tasks' is null.");
-            }
-
-            task.TaskId = Guid.NewGuid();
-            task.UserId = userId;
-            _context.Tasks.Add(task);
             try
             {
+                task.TaskId = Guid.NewGuid();
+                task.UserId = userId;
+
+                _context.Tasks.Add(task);
                 await _context.SaveChangesAsync();
+
+                return CreatedAtAction("GetTasksByUserId", new { }, task);
             }
+
             catch (DbUpdateException)
             {
                 if (TaskExists(task.TaskId))
                 {
-                    return Conflict();
+                    return Conflict("A task with the same ID already exists.");
                 }
                 else
                 {
-                    throw;
+                    return StatusCode(500, "An error occurred while saving the task.");
                 }
             }
-
-            return CreatedAtAction("GetTask", new { id = task.TaskId }, task);
+            catch (Exception)
+            {
+                return StatusCode(500, "An error occurred while processing the request.");
+            }
         }
 
-        // DELETE: api/Tasks/5
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteTask(Guid id)
+        // DELETE: api/Tasks
+        [HttpDelete("userTasks")]
+        public async Task<IActionResult> DeleteTasks([FromBody] List<Guid> taskIds)
         {
-            if (_context.Tasks == null)
+            string? token = Request.Headers["Authorization"].FirstOrDefault()?.Replace("Bearer ", "");
+
+            if (string.IsNullOrEmpty(token))
             {
-                return NotFound();
+                return Unauthorized();
             }
-            var task = await _context.Tasks.FindAsync(id);
-            if (task == null)
+
+            Guid userId = GetUserIdFromToken(token!);
+
+            var tasksToDelete = await _context.Tasks
+                .Where(task => taskIds.Contains(task.TaskId) && task.UserId == userId)
+                .ToListAsync();
+
+            if (tasksToDelete.Count == 0)
             {
                 return NotFound();
             }
 
-            _context.Tasks.Remove(task);
-            await _context.SaveChangesAsync();
+            _context.Tasks.RemoveRange(tasksToDelete);
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return StatusCode(500, "Failed to delete the tasks.");
+            }
+
+            return NoContent();
+        }
+
+        [HttpDelete("deleteAllTasks")]
+        public async Task<IActionResult> DeleteTasks()
+        {
+            string? token = Request.Headers["Authorization"].FirstOrDefault()?.Replace("Bearer ", "");
+
+            if (string.IsNullOrEmpty(token))
+            {
+                return Unauthorized();
+            }
+
+            Guid userId = GetUserIdFromToken(token!);
+
+            var tasksToDelete = await _context.Tasks
+                .Where(task => task.UserId == userId)
+                .ToListAsync();
+
+            if (tasksToDelete.Count == 0)
+            {
+                return NotFound();
+            }
+
+            _context.Tasks.RemoveRange(tasksToDelete);
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return StatusCode(500, "Failed to delete the tasks.");
+            }
 
             return NoContent();
         }
